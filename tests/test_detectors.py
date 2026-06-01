@@ -62,6 +62,36 @@ def test_dependency_detector_requirements_txt(tmp_path):
     assert "requirements.txt" in files
     assert sorted(["fastapi", "pydantic", "pytest"]) == deps
 
+def test_dependency_detector_pyproject_toml_poetry(tmp_path):
+    content = '''
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "0.95.0"
+pydantic = "^1.10"
+'''
+    (tmp_path / "pyproject.toml").write_text(content)
+    
+    detector = DependencyDetector()
+    files, deps = detector.detect(tmp_path)
+    assert "pyproject.toml" in files
+    assert sorted(["fastapi", "pydantic"]) == deps
+
+def test_dependency_detector_pyproject_toml_standard(tmp_path):
+    content = '''
+[project]
+name = "devsecscan"
+dependencies = [
+    "requests>=2.0",
+    'urllib3'
+]
+'''
+    (tmp_path / "pyproject.toml").write_text(content)
+    
+    detector = DependencyDetector()
+    files, deps = detector.detect(tmp_path)
+    assert "pyproject.toml" in files
+    assert sorted(["requests", "urllib3"]) == deps
+
 def test_dependency_detector_malformed(tmp_path):
     (tmp_path / "package.json").write_text("invalid json {")
     detector = DependencyDetector()
