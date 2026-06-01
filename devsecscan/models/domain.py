@@ -12,13 +12,21 @@ class Finding(BaseModel):
     file_path: str | None = None
     line_number: int | None = None
     
+class RepositoryAnalysisError(Exception):
+    """Raised when repository analysis fails (e.g. path does not exist)."""
+    pass
+
 class RepositoryContext(BaseModel):
-    path: str
+    project_name: str | None = None
+    project_path: str
+    primary_language: str | None = None
+    detected_languages: dict[str, float] = Field(default_factory=dict)
     framework: str | None = None
-    language: str | None = None
+    package_manager: str | None = None
+    dependency_files: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
-    file_count: int = 0
-    structure_summary: str | None = None
+    total_files: int = 0
+    source_directories: list[str] = Field(default_factory=list)
 
 class DeploymentRecommendation(BaseModel):
     risk: str

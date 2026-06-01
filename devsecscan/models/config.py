@@ -1,7 +1,9 @@
 from pydantic import BaseModel, Field
 
+from typing import Literal
+
 class ProviderConfig(BaseModel):
-    name: str = "claude"
+    name: Literal["openai", "claude", "gemini", "deepseek", "qwen", "nvidia_nim", "ollama", "ollama_cloud"] = "claude"
     api_key: str | None = None
     model_name: str | None = None
 

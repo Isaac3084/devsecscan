@@ -1,0 +1,2 @@
+[console_scripts]
+devsecscan = devsecscan.cli.main:main
