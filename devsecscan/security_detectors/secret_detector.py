@@ -79,7 +79,7 @@ class SecretDetector(BaseDetector):
         rules = self.registry.get_all()
         repo_path = Path(context.project_path)
 
-        for file_path, line_number, line_content in self.scanner.scan(repo_path):
+        for file_path, line_number, line_content in self.scanner.scan(repo_path, context.scan_plan):
             emitted_spans: list[tuple[int, int]] = []
             for rule in rules:
                 # Compile regex on the fly, or could optimize by pre-compiling

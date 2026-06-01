@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from .scan_plan import ScanPlan
+
 class Risk(BaseModel):
     name: str
     description: str
@@ -20,6 +22,7 @@ class RepositoryContext(BaseModel):
     dependencies: list[str] = Field(default_factory=list)
     total_files: int = 0
     source_directories: list[str] = Field(default_factory=list)
+    scan_plan: ScanPlan | None = None
 
 class DeploymentRecommendation(BaseModel):
     risk: str

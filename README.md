@@ -1,12 +1,16 @@
 # DevSecScan
 
-DevSecScan is a local, deterministic repository security scanner. Phase 6 adds a rule-based risk classification engine that turns technical findings into business risk assessments and deployment recommendations.
+DevSecScan is a local, deterministic repository security scanner. Phase 6 added a rule-based risk classification engine, and Phase 6A adds repository mapping plus scan planning so scanners only inspect approved parts of a repository.
 
 ## Updated Architecture Diagram
 
 ```mermaid
 flowchart TD
-    Repository["Repository"] --> Analyzer["Repository Analyzer"]
+    Repository["Repository"] --> Mapper["Repository Mapper"]
+    Mapper --> Classifier["Directory Classifier"]
+    Classifier --> Planner["Scan Planner"]
+    Planner --> ScanPlan["Scan Plan"]
+    ScanPlan --> Analyzer["Repository Analyzer"]
     Analyzer --> Context["RepositoryContext"]
     Context --> Detectors["Security Detectors"]
     Detectors --> FindingEngine["Finding Engine"]
@@ -26,6 +30,22 @@ flowchart TD
 classDiagram
     class RepositoryAnalyzer {
         +analyze(path) RepositoryContext
+    }
+    class RepositoryMapper {
+        +map(path) RepositoryStructure
+    }
+    class DirectoryClassifier {
+        +classify(directory_name) DirectoryType
+        +priority_for(directory_type) int
+    }
+    class ScanPlanner {
+        +plan(path) ScanPlan
+        +from_structure(structure) ScanPlan
+        +summarize(plan) RepositoryScanSummary
+    }
+    class IgnoreLoader {
+        +load(repo_path) list~str~
+        +matches(path, patterns) bool
     }
     class FindingEngine {
         +register(detector)
@@ -67,7 +87,27 @@ classDiagram
         +deployment_status DeploymentStatus
         +assessments list~RiskAssessment~
     }
+    class RepositoryStructure {
+        +project_path str
+        +directories list~str~
+        +files list~str~
+        +directory_types dict
+    }
+    class ScanPlan {
+        +repository_path str
+        +scan_directories list~str~
+        +skip_directories list~str~
+        +scan_files list~str~
+        +directory_priorities dict
+        +skip_reasons dict
+    }
 
+    RepositoryMapper --> RepositoryStructure
+    ScanPlanner --> RepositoryMapper
+    ScanPlanner --> DirectoryClassifier
+    ScanPlanner --> IgnoreLoader
+    ScanPlanner --> ScanPlan
+    RepositoryAnalyzer --> ScanPlanner
     RepositoryAnalyzer --> FindingEngine
     FindingEngine --> SecretDetector
     RiskClassifier --> RiskRegistry
@@ -80,8 +120,12 @@ classDiagram
 
 ```mermaid
 flowchart LR
-    SourceFiles["Source Files"] --> IgnoreSystem["Ignore System"]
-    IgnoreSystem --> FileScanner["FileScanner"]
+    SourceFiles["Repository"] --> Mapper["Repository Mapper"]
+    Mapper --> Structure["RepositoryStructure"]
+    Structure --> Classifier["Directory Classifier"]
+    Classifier --> Planner["Scan Planner"]
+    Planner --> ScanPlan["ScanPlan"]
+    ScanPlan --> FileScanner["FileScanner"]
     FileScanner --> SecretRules["Secret Rules"]
     SecretRules --> Findings["Normalized Findings"]
     Findings --> Registry["Risk Registry"]
@@ -98,8 +142,11 @@ flowchart LR
 4. Generate human-readable remediation through `RecommendationEngine`.
 5. Aggregate final repository safety through `DeploymentGate`.
 6. Render terminal preview output from `RepositoryRiskSummary`.
-7. Preserve ignore support so test fixtures and generated folders do not create findings.
-8. Add tests for models, classification, recommendations, gate behavior, ignored paths, summary formatting, and CLI preview output.
+7. Map repositories shallowly before scanning to identify top-level directories and files.
+8. Classify directories with an extensible known-directory registry.
+9. Generate a `ScanPlan` that includes approved source/config directories and excluded system paths.
+10. Preserve ignore support so test fixtures and generated folders do not create findings.
+11. Add tests for models, classification, recommendations, gate behavior, ignored paths, scan planning, summary formatting, and CLI preview output.
 
 ## Usage
 
@@ -139,7 +186,7 @@ The risk engine is offline only. It does not call AI providers, cloud APIs, or e
 
 ## Ignore System
 
-DevSecScan ignores common generated and fixture paths by default:
+DevSecScan uses `.devsecscanignore` during scan planning and ignores common generated and fixture paths by default:
 
 ```text
 tests/
@@ -154,6 +201,38 @@ venv/
 ```
 
 Add project-specific ignores in `.devsecscanignore`.
+
+## Repository Mapper And Scan Planner
+
+Phase 6A introduces a deterministic repository intelligence layer:
+
+```text
+Repository
+Repository Mapper
+Directory Classifier
+Scan Planner
+Scan Plan
+Repository Analyzer
+Security Detectors
+Risk Engine
+```
+
+Directory priorities:
+
+```text
+SOURCE_CODE = 100
+CONFIGURATION = 90
+TEST_CODE = 40
+DOCUMENTATION = 10
+UNKNOWN = 20
+ENVIRONMENT = 0
+DEPENDENCIES = 0
+CACHE = 0
+BUILD_OUTPUT = 0
+METADATA = 0
+```
+
+Security detectors consume the scan plan instead of walking the repository directly.
 
 ## Tests
 

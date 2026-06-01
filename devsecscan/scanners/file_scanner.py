@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Iterator, Tuple
 
 from .ignore_manager import IgnoreManager
+from ..models.scan_plan import ScanPlan
+from ..repository.scan_planner import ScanPlanner
 
 
 class FileScanner:
@@ -31,22 +33,45 @@ class FileScanner:
             pass
         return False
 
-    def scan(self, repo_path: Path) -> Iterator[Tuple[Path, int, str]]:
+    def _iter_plan_files(self, repo_path: Path, scan_plan: ScanPlan) -> Iterator[Path]:
+        for filename in scan_plan.scan_files:
+            file_path = repo_path / filename
+            if file_path.is_file():
+                yield file_path
+
+        for directory in scan_plan.scan_directories:
+            directory_path = repo_path / directory
+            if not directory_path.exists() or not directory_path.is_dir():
+                continue
+
+            try:
+                for file_path in directory_path.rglob("*"):
+                    if file_path.is_file():
+                        yield file_path
+            except OSError:
+                continue
+
+    def scan(self, repo_path: Path, scan_plan: ScanPlan | None = None) -> Iterator[Tuple[Path, int, str]]:
         """
         Yields (file_path, line_number, line_content) for all valid files in the repository.
-        Respects .devsecscanignore and default ignore rules.
+        Respects the scan plan, .devsecscanignore, and default ignore rules.
         """
         if not repo_path.exists() or not repo_path.is_dir():
             return
 
-        ignore_mgr = IgnoreManager(repo_path)
+        if scan_plan is None:
+            scan_plan = ScanPlanner().plan(repo_path)
 
-        for file_path in repo_path.rglob("*"):
-            if not file_path.is_file():
+        ignore_mgr = IgnoreManager(repo_path)
+        skipped_directories = set(scan_plan.skip_directories)
+
+        for file_path in self._iter_plan_files(repo_path, scan_plan):
+            try:
+                rel_parts = file_path.relative_to(repo_path).parts
+            except ValueError:
                 continue
 
-            # Ignore standard non-source directories (fast path)
-            if any(ignored in file_path.parts for ignored in (".git", "node_modules", "venv", "__pycache__", ".venv", "target", "build", "dist")):
+            if any(part in skipped_directories for part in rel_parts):
                 continue
 
             # Check .devsecscanignore and default ignore rules

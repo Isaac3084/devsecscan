@@ -3,6 +3,7 @@ from pathlib import Path
 from ..interfaces.analyzer import BaseAnalyzer
 from ..models.domain import RepositoryContext, RepositoryAnalysisError
 from ..detectors import LanguageDetector, DependencyDetector, PackageManagerDetector, FrameworkDetector
+from ..repository.scan_planner import ScanPlanner
 
 class RepositoryAnalyzer(BaseAnalyzer):
     def __init__(self):
@@ -10,6 +11,7 @@ class RepositoryAnalyzer(BaseAnalyzer):
         self.dependency_detector = DependencyDetector()
         self.package_manager_detector = PackageManagerDetector()
         self.framework_detector = FrameworkDetector()
+        self.scan_planner = ScanPlanner()
 
     def analyze(self, path: str) -> RepositoryContext:
         """
@@ -41,12 +43,12 @@ class RepositoryAnalyzer(BaseAnalyzer):
 
         # 4. Detect Framework
         framework = self.framework_detector.detect(dependencies)
+
+        # 5. Generate scan plan before any security detector runs
+        scan_plan = self.scan_planner.plan(p)
         
-        # 5. Determine Source Directories (Basic heuristic)
-        source_directories = []
-        for d in p.iterdir():
-            if d.is_dir() and d.name not in (".git", "node_modules", "venv", "__pycache__", ".venv", "target", "build", "dist", "coverage"):
-                source_directories.append(d.name)
+        # 6. Determine source directories from the scan plan
+        source_directories = list(scan_plan.scan_directories)
 
         return RepositoryContext(
             project_name=project_name,
@@ -58,5 +60,6 @@ class RepositoryAnalyzer(BaseAnalyzer):
             dependency_files=dependency_files,
             dependencies=dependencies,
             total_files=total_files,
-            source_directories=source_directories
+            source_directories=source_directories,
+            scan_plan=scan_plan,
         )
