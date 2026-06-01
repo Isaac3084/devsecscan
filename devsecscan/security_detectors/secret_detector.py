@@ -49,6 +49,28 @@ class SecretDetector(BaseDetector):
             
         return round(confidence, 2)
 
+    def _is_likely_rule_or_example_line(self, line_content: str) -> bool:
+        """Avoid reporting detector rule definitions and explicit inline examples."""
+        stripped = line_content.strip().lower()
+        return (
+            stripped.startswith(("e.g.", "example:", "sample:"))
+            or (
+                stripped.startswith("#")
+                and any(cue in stripped for cue in ("example", "sample", " like "))
+            )
+            or "pattern=r" in stripped
+            or "pattern = r" in stripped
+        )
+
+    def _overlaps_existing_secret(
+        self,
+        span: tuple[int, int],
+        emitted_spans: list[tuple[int, int]],
+    ) -> bool:
+        """Return True when a generic match overlaps a more specific match."""
+        start, end = span
+        return any(start < existing_end and end > existing_start for existing_start, existing_end in emitted_spans)
+
     def detect(self, context: RepositoryContext) -> list[Finding]:
         """
         Scans the repository for secrets using registered rules.
@@ -58,6 +80,7 @@ class SecretDetector(BaseDetector):
         repo_path = Path(context.project_path)
 
         for file_path, line_number, line_content in self.scanner.scan(repo_path):
+            emitted_spans: list[tuple[int, int]] = []
             for rule in rules:
                 # Compile regex on the fly, or could optimize by pre-compiling
                 try:
@@ -66,8 +89,17 @@ class SecretDetector(BaseDetector):
                         # Extract the actual secret. If it's a generic rule, group(2) might hold the secret
                         if rule.name == "Generic Secret" and len(match.groups()) >= 2:
                             raw_secret = match.group(2)
+                            secret_span = match.span(2)
+                            if raw_secret.lower() == match.group(1).lower():
+                                continue
+                            if self._overlaps_existing_secret(secret_span, emitted_spans):
+                                continue
                         else:
                             raw_secret = match.group(0)
+                            secret_span = match.span(0)
+
+                        if self._is_likely_rule_or_example_line(line_content):
+                            continue
                             
                         masked = self._mask_secret(raw_secret)
                         confidence = self._adjust_confidence(rule, line_content)
@@ -87,6 +119,7 @@ class SecretDetector(BaseDetector):
                                 detector_name="SecretDetector"
                             )
                             findings.append(finding)
+                            emitted_spans.append(secret_span)
                 except re.error:
                     continue # Skip broken regex rules gracefully
 

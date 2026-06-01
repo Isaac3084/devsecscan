@@ -55,3 +55,18 @@ def test_secret_detector_generic_rule(tmp_path):
     
     assert len(findings) == 1
     assert findings[0].confidence > 0.3
+
+def test_secret_detector_ignores_rule_definitions_and_explicit_examples(tmp_path):
+    (tmp_path / "rules.py").write_text(
+        'pattern=r"sk-[A-Za-z0-9]{20,}"\n'
+        '    e.g. sk-1234567890abcdefghijk\n'
+        'SECRET = "SECRET"\n'
+        'OPENAI_API_KEY = "sk-1234567890abcdefghijk1234567890"\n'
+    )
+
+    ctx = RepositoryContext(project_path=str(tmp_path))
+    detector = SecretDetector()
+    findings = detector.detect(ctx)
+
+    assert len(findings) == 1
+    assert findings[0].title == "Hardcoded OpenAI API Key"
