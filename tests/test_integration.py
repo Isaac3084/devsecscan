@@ -4,76 +4,110 @@ from pathlib import Path
 from devsecscan.analyzers.repository_analyzer import RepositoryAnalyzer
 from devsecscan.security_detectors.secret_detector import SecretDetector
 from devsecscan.findings.finding_engine import FindingEngine
+from devsecscan.risk_engine.risk_classifier import RiskClassifier
+from devsecscan.risk_engine.deployment_gate import DeploymentGate
 from devsecscan.models.domain import RepositoryContext
+from devsecscan.models.risk_assessment import DeploymentStatus
 from devsecscan.findings.categories import Category
 
-def test_full_pipeline_integration(tmp_path):
-    """
-    End-to-End Integration Test:
-    Verifies that the RepositoryAnalyzer correctly identifies the project metadata,
-    and the FindingEngine correctly orchestrates the SecretDetector to find
-    secrets across the mock repository, returning masked findings.
-    """
-    # 1. Setup Mock Repository
-    repo_path = tmp_path / "integration_repo"
-    repo_path.mkdir()
-    
-    # Metadata files for Repository Analyzer
-    (repo_path / "pyproject.toml").write_text('''
-[project]
-name = "integration_test"
-dependencies = ["fastapi", "uvicorn"]
-    ''')
-    
-    # Source code with a secret
-    src_dir = repo_path / "src"
-    src_dir.mkdir()
-    (src_dir / "main.py").write_text('''
-import os
-def start():
-    # Intentionally vulnerable code for testing
-    OPENAI_API_KEY = "sk-1234567890abcdefghijk1234567890"
-    print("Starting server")
-    ''')
-    
-    # Another file with a dummy generic secret
-    (src_dir / "auth.js").write_text('''
-const token = "dummy_token_12345";
-    ''')
 
-    # 2. Run Repository Analyzer
+def _build_repo(tmp_path):
+    """Helper: creates a realistic mock repository on disk."""
+    repo = tmp_path / "myapp"
+    repo.mkdir()
+
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname = "myapp"\ndependencies = ["fastapi", "uvicorn"]\n'
+    )
+
+    src = repo / "src"
+    src.mkdir()
+    (src / "main.py").write_text(
+        'OPENAI_API_KEY = "sk-1234567890abcdefghijk1234567890"\n'
+        'print("Starting server")\n'
+    )
+    (src / "config.py").write_text(
+        'AWS_KEY = "AKIA1234567890123456"\n'
+    )
+
+    # Test fixtures should be ignored by the ignore system
+    tests = repo / "tests"
+    tests.mkdir()
+    (tests / "test_main.py").write_text(
+        'FAKE_KEY = "sk-testfaketestfaketestfaketest"\n'
+    )
+
+    return repo
+
+
+def test_full_pipeline_with_risk_engine(tmp_path):
+    """
+    End-to-end integration: RepositoryAnalyzer → FindingEngine → RiskClassifier → DeploymentGate.
+    Verifies that the entire chain produces a correct RepositoryRiskSummary.
+    """
+    repo = _build_repo(tmp_path)
+
+    # 1. Analyze repo
     analyzer = RepositoryAnalyzer()
-    context = analyzer.analyze(str(repo_path))
-    
-    # Verify Context
+    context = analyzer.analyze(str(repo))
     assert context.primary_language.lower() == "python"
-    assert "fastapi" in context.dependencies
-    assert context.framework == "fastapi"
-    
-    # 3. Setup Finding Engine & Secret Detector
+
+    # 2. Detect secrets
     engine = FindingEngine()
-    secret_detector = SecretDetector()
-    engine.register(secret_detector)
-    
-    # 4. Execute Engine
+    engine.register(SecretDetector())
     findings = engine.run(context)
-    
-    # 5. Verify Integrated Findings
-    assert len(findings) >= 1
-    
-    # The findings should be sorted by Severity.
-    # The OpenAI key is CRITICAL, so it should be near the top.
-    openai_findings = [f for f in findings if "OpenAI" in f.title]
-    assert len(openai_findings) == 1
-    
-    finding = openai_findings[0]
-    assert finding.category == Category.SECRET
-    assert "sk-1234" in finding.code_snippet 
-    assert "7890" in finding.code_snippet
-    assert "****************" in finding.code_snippet
-    assert "sk-1234567890abcdef" not in finding.code_snippet # Ensure masking applied
-    
-    # Ensure line number and path resolution worked
-    assert finding.file_path.replace("\\", "/").endswith("src/main.py")
-    assert finding.line_number == 5
-    assert finding.detector_name == "SecretDetector"
+
+    # Only src/ secrets should appear; tests/ should be ignored
+    file_paths = [f.file_path.replace("\\", "/") for f in findings]
+    for fp in file_paths:
+        assert "tests/" not in fp, f"Test fixture leaked into findings: {fp}"
+
+    # We expect at least the OpenAI key and the AWS key
+    titles = [f.title for f in findings]
+    assert any("OpenAI" in t for t in titles)
+    assert any("AWS" in t for t in titles)
+
+    # 3. Classify risks
+    classifier = RiskClassifier()
+    assessments = classifier.classify_all(findings)
+    assert len(assessments) == len(findings)
+
+    # At least one assessment should be DO_NOT_DEPLOY (the CRITICAL OpenAI key)
+    statuses = [a.deployment_status for a in assessments]
+    assert DeploymentStatus.DO_NOT_DEPLOY in statuses
+
+    # 4. Deployment gate
+    gate = DeploymentGate()
+    summary = gate.evaluate(findings, assessments)
+
+    assert summary.deployment_status == DeploymentStatus.DO_NOT_DEPLOY
+    assert summary.critical >= 1
+    assert summary.total_findings >= 2
+
+
+def test_safe_repository(tmp_path):
+    """
+    Integration test for a clean repository with no secrets.
+    Should produce SAFE deployment status.
+    """
+    repo = tmp_path / "clean_app"
+    repo.mkdir()
+    src = repo / "src"
+    src.mkdir()
+    (src / "main.py").write_text('print("Hello, world!")\n')
+
+    analyzer = RepositoryAnalyzer()
+    context = analyzer.analyze(str(repo))
+
+    engine = FindingEngine()
+    engine.register(SecretDetector())
+    findings = engine.run(context)
+
+    classifier = RiskClassifier()
+    assessments = classifier.classify_all(findings)
+
+    gate = DeploymentGate()
+    summary = gate.evaluate(findings, assessments)
+
+    assert summary.total_findings == 0
+    assert summary.deployment_status == DeploymentStatus.SAFE

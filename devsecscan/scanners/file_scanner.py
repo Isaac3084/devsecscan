@@ -2,12 +2,15 @@ import os
 from pathlib import Path
 from typing import Iterator, Tuple
 
+from .ignore_manager import IgnoreManager
+
+
 class FileScanner:
     DEFAULT_EXTENSIONS = {
-        ".py", ".js", ".ts", ".jsx", ".tsx", ".env", ".json", 
+        ".py", ".js", ".ts", ".jsx", ".tsx", ".env", ".json",
         ".yaml", ".yml", ".toml", ".txt", ".ini", ".conf", ".pem", ".key"
     }
-    
+
     def __init__(self, allowed_extensions: set[str] = None, max_file_size_bytes: int = 1_000_000):
         """
         Initializes the FileScanner.
@@ -31,16 +34,23 @@ class FileScanner:
     def scan(self, repo_path: Path) -> Iterator[Tuple[Path, int, str]]:
         """
         Yields (file_path, line_number, line_content) for all valid files in the repository.
+        Respects .devsecscanignore and default ignore rules.
         """
         if not repo_path.exists() or not repo_path.is_dir():
             return
 
+        ignore_mgr = IgnoreManager(repo_path)
+
         for file_path in repo_path.rglob("*"):
             if not file_path.is_file():
                 continue
-                
-            # Ignore standard non-source directories
+
+            # Ignore standard non-source directories (fast path)
             if any(ignored in file_path.parts for ignored in (".git", "node_modules", "venv", "__pycache__", ".venv", "target", "build", "dist")):
+                continue
+
+            # Check .devsecscanignore and default ignore rules
+            if ignore_mgr.should_ignore(file_path, repo_path):
                 continue
 
             # Check extension
@@ -62,8 +72,6 @@ class FileScanner:
             try:
                 with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     for line_number, line_content in enumerate(f, start=1):
-                        # Yield the stripped line or raw? Raw line preserves spacing for context, but stripped is better for regex.
-                        # We will yield raw to let the detector handle it.
                         yield file_path, line_number, line_content
             except OSError:
-                pass # Gracefully skip unreadable files
+                pass  # Gracefully skip unreadable files
