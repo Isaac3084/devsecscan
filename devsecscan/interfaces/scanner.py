@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from ..models.domain import Finding
+from ..models.finding import Finding
 
 class BaseScanner(ABC):
     @abstractmethod

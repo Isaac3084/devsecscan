@@ -17,7 +17,8 @@ We utilize pytest to comprehensively test:
 import pytest
 from pydantic import ValidationError
 from devsecscan.models.config import UserConfig, ProviderConfig
-from devsecscan.models.domain import Risk, Finding, RepositoryContext, DeploymentRecommendation
+from devsecscan.models.domain import Risk, RepositoryContext, DeploymentRecommendation
+from devsecscan.models.finding import Finding
 from devsecscan.models.analysis import AnalysisRequest, AnalysisResult
 
 
@@ -89,18 +90,20 @@ def test_user_config_serialization():
 def test_finding_validation():
     """
     Why: Validates that a Finding requires specific mandatory fields but allows optional context.
-    Assumption: An issue, consequence, and likelihood are the absolute minimum to define a risk finding.
+    Assumption: An issue title, description, category, and severity are the absolute minimum to define a risk finding.
     Bug prevented: Prevents the Risk Engine from processing incomplete findings.
     """
     with pytest.raises(ValidationError):
-        Finding(issue="Hardcoded Secret") # Missing required fields
+        Finding(title="Hardcoded Secret") # Missing required fields
 
     finding = Finding(
-        issue="Hardcoded Secret",
-        potential_consequences="Account Takeover",
-        likelihood="High"
+        title="Hardcoded Secret",
+        description="Found an API key",
+        category="SECRET",
+        severity="HIGH"
     )
-    assert finding.severity is None
+    assert finding.confidence == 0.0
+    assert finding.file_path is None
 
 def test_repository_context_edge_cases():
     """

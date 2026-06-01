@@ -4,14 +4,7 @@ class Risk(BaseModel):
     name: str
     description: str
 
-class Finding(BaseModel):
-    issue: str
-    potential_consequences: str
-    likelihood: str
-    severity: str | None = None
-    file_path: str | None = None
-    line_number: int | None = None
-    
+
 class RepositoryAnalysisError(Exception):
     """Raised when repository analysis fails (e.g. path does not exist)."""
     pass

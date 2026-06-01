@@ -21,7 +21,8 @@ from devsecscan.interfaces import (
     BaseRiskEngine
 )
 from devsecscan.models.analysis import AnalysisRequest, AnalysisResult
-from devsecscan.models.domain import RepositoryContext, Finding, DeploymentRecommendation
+from devsecscan.models.domain import RepositoryContext, DeploymentRecommendation
+from devsecscan.models.finding import Finding
 
 def test_interfaces_are_abstract():
     """

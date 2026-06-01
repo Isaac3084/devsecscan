@@ -1,0 +1,14 @@
+from enum import Enum
+
+class Category(str, Enum):
+    SECRET = "SECRET"
+    AUTHENTICATION = "AUTHENTICATION"
+    AUTHORIZATION = "AUTHORIZATION"
+    CONFIGURATION = "CONFIGURATION"
+    DEPENDENCY = "DEPENDENCY"
+    INFRASTRUCTURE = "INFRASTRUCTURE"
+    API_SECURITY = "API_SECURITY"
+    DEPLOYMENT = "DEPLOYMENT"
+    
+    def __str__(self):
+        return self.value

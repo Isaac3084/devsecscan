@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from ..models.domain import Finding, DeploymentRecommendation
+from ..models.domain import DeploymentRecommendation
+from ..models.finding import Finding
 
 class BaseRiskEngine(ABC):
     @abstractmethod

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from .domain import RepositoryContext, Finding, DeploymentRecommendation
+from .domain import RepositoryContext, DeploymentRecommendation
+from .finding import Finding
 
 class AnalysisRequest(BaseModel):
     context: RepositoryContext
